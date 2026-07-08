@@ -46,6 +46,9 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Checkout release branch
+        run: git checkout -B main
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
