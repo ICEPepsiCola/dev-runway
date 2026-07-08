@@ -1,9 +1,9 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -22,12 +22,33 @@ permissions:
   contents: write
 
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  auto-release:
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        env:
+          HUSKY: 0
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+  release:
+    needs: ci
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
 
     env:
@@ -36,24 +57,17 @@ jobs:
       GIT_COMMITTER_NAME: github-actions[bot]
       GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       HUSKY: 0
-      HEAD_COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Checkout release branch
-        run: |
-          git checkout -B main
-          git branch --set-upstream-to=origin/main main
+      - uses: pnpm/action-setup@v6
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -61,65 +75,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Check npm identity
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "NPM_TOKEN set: ${{ secrets.NPM_TOKEN != '' }}"
-          echo "NODE_AUTH_TOKEN length: ${#NODE_AUTH_TOKEN}"
-          npm whoami
-
-      - run: |
-          if [[ "$HEAD_COMMIT_MESSAGE" == chore:\ release\ v* ]]; then
-            echo "Skipping auto-release for release-it commit: $HEAD_COMMIT_MESSAGE"
-            exit 0
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            HEAD_COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+            if [[ "$HEAD_COMMIT_MESSAGE" == chore:\ release\ v* ]]; then
+              echo "Skipping auto-release for release-it commit"
+              exit 0
+            fi
           fi
 
-          pnpm exec release-it --ci
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  manual-release:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-
-    env:
-      GIT_AUTHOR_NAME: github-actions[bot]
-      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-      GIT_COMMITTER_NAME: github-actions[bot]
-      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-      HUSKY: 0
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Check npm identity
-        run: |
-          echo "NPM_TOKEN set: ${{ secrets.NPM_TOKEN != '' }}"
-          echo "NODE_AUTH_TOKEN length: ${#NODE_AUTH_TOKEN}"
-          npm whoami
-
-      - if: ${{ inputs.increment == 'auto' }}
-        run: pnpm exec release-it --ci
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - if: ${{ inputs.increment != 'auto' }}
-        run: pnpm exec release-it --ci ${{ inputs.increment }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.increment }}" != "auto" ]]; then
+            pnpm exec release-it --ci ${{ inputs.increment }}
+          else
+            pnpm exec release-it --ci
+          fi
