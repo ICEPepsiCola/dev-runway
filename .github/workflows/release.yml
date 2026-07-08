@@ -1,9 +1,10 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       increment:
@@ -26,6 +27,7 @@ concurrency:
 
 jobs:
   auto-release:
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: ubuntu-latest
 
     env:
@@ -34,7 +36,7 @@ jobs:
       GIT_COMMITTER_NAME: github-actions[bot]
       GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
       HUSKY: 0
-      HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+      HEAD_COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -42,6 +44,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: pnpm/action-setup@v4
 
@@ -59,8 +62,7 @@ jobs:
           echo "NODE_AUTH_TOKEN length: ${#NODE_AUTH_TOKEN}"
           npm whoami
 
-      - if: ${{ github.event_name == 'push' }}
-        run: |
+      - run: |
           if [[ "$HEAD_COMMIT_MESSAGE" == chore:\ release\ v* ]]; then
             echo "Skipping auto-release for release-it commit: $HEAD_COMMIT_MESSAGE"
             exit 0
