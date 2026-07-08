@@ -1,0 +1,32 @@
+{
+  "git": {
+    "commitMessage": "chore: release v${version}",
+    "tagName": "v${version}",
+    "requireCleanWorkingDir": true,
+    "getLatestTagFromAllRefs": true,
+    "push": true
+  },
+  "gitlab": {
+    "release": false,
+    "tokenRef": "GITLAB_TOKEN",
+    "releaseName": "Release v${version}"
+  },
+  "npm": {
+    "publish": true,
+    "skipChecks": true,
+    "publishConfig": {
+      "registry": "https://registry.npmjs.org"
+    }
+  },
+  "hooks": {
+    "before:init": ["pnpm lint", "pnpm typecheck"],
+    "after:bump": ["pnpm build"],
+    "after:release": "echo Successfully released ${name} v${version} to ${repo.repository}."
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": "angular",
+      "infile": "CHANGELOG.md"
+    }
+  }
+}
