@@ -1,6 +1,6 @@
 {
   "name": "dev-runway",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Interactive CLI for launching frontend dev environments. Build-tool agnostic, TypeScript-first, CI-friendly.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
